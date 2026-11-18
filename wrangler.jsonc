@@ -1,0 +1,10 @@
+{
+  // Worker só de arquivos estáticos: serve o que está em ./public (o app inteiro é public/index.html).
+  // "name" precisa ser IGUAL ao nome do Worker no painel da Cloudflare.
+  "name": "3dlayoutmaster",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "single-page-application"
+  }
+}
