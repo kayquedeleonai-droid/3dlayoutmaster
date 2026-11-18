@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Flamingos · blocking v01</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+  "mp4-muxer": "https://cdn.jsdelivr.net/npm/mp4-muxer@5.1.3/build/mp4-muxer.mjs"
+} }
+</script>
+<style>
+:root {
+  --bg: #e7e6e3; --panel: #f3f2ef; --line: #d2d0cb; --text: #1e1f22; --muted: #66676c; --accent: #c2336f; --accent-ink: #fff;
+  --rec: #d63b2e; --ok: #2f7d4f; --bad: #b2362b; --viewer: #101113; --field: #fff;
+  color-scheme: light;
+  box-sizing: border-box; padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #1c1d20; --panel: #242528; --line: #34363b; --text: #e9e7e2; --muted: #9c9da3; --accent: #ff6fa8; --accent-ink: #1c1d20; --rec: #ff5a4c; --ok: #6fcf97; --bad: #ff7a6b; --viewer: #0c0d0f; --field: #1b1c1f; color-scheme: dark; }
+}
+:root[data-theme="dark"] { --bg: #1c1d20; --panel: #242528; --line: #34363b; --text: #e9e7e2; --muted: #9c9da3; --accent: #ff6fa8; --accent-ink: #1c1d20; --rec: #ff5a4c; --ok: #6fcf97; --bad: #ff7a6b; --viewer: #0c0d0f; --field: #1b1c1f; color-scheme: dark; }
+*, *::before, *::after { box-sizing: inherit; }
+html { scroll-padding-top: env(safe-area-inset-top, 0px); height: 100%; }
+body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.app { display: grid; grid-template-columns: minmax(0, 1fr) 380px; height: 100%; }
+.stage { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; min-width: 0; overflow: hidden; }
+.mast { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+.mast h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.mast p { margin: 0; color: var(--muted); }
+#viewer { position: relative; width: min(100%, calc((100vh - 230px) * 16 / 9)); aspect-ratio: 16 / 9; background: var(--viewer); border-radius: 4px; overflow: hidden; align-self: center; }
+#view { display: block; width: 100%; height: 100%; touch-action: none; }
+#boot { position: absolute; inset: 0; display: grid; place-items: center; color: #cfcfcf; font-size: 15px; padding: 20px; text-align: center; background: var(--viewer); }
+#boot[hidden] { display: none; }
+.viewtoggle { position: absolute; right: 8px; bottom: 8px; display: flex; gap: 2px; background: rgba(0,0,0,.5); border-radius: 3px; padding: 2px; }
+.viewtoggle button { all: unset; cursor: pointer; color: #ddd; font-size: 12px; padding: 4px 10px; border-radius: 2px; }
+.viewtoggle button[aria-pressed="true"] { background: #ff6fa8; color: #1c1d20; }
+.hudtoggle { right: auto; left: 8px; }
+.transport { display: grid; grid-template-columns: auto auto auto minmax(0,1fr) auto; gap: 8px; align-items: center; width: min(100%, calc((100vh - 230px) * 16 / 9)); align-self: center; }
+.transport button { font: inherit; padding: 5px 10px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 3px; cursor: pointer; min-width: 36px; }
+.transport button.play { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); min-width: 74px; }
+#scrub { width: 100%; accent-color: var(--accent); }
+#readout { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12.5px; color: var(--muted); min-width: 150px; text-align: right; }
+.beats { position: relative; height: 26px; width: min(100%, calc((100vh - 230px) * 16 / 9)); align-self: center; }
+.beats .beat { position: absolute; top: 0; transform: translateX(-1px); border-left: 2px solid var(--accent); padding-left: 4px; font-size: 11.5px; color: var(--muted); white-space: nowrap; cursor: pointer; background: none; border-top: 0; border-right: 0; border-bottom: 0; font-family: inherit; line-height: 1.2; }
+.beats .beat:hover { color: var(--text); }
+.rack { overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding: 10px 12px 40px; }
+details.panel { border-bottom: 1px solid var(--line); padding: 6px 0 10px; }
+details.panel > summary { cursor: pointer; font-weight: 600; font-size: 14.5px; padding: 4px 0; list-style: none; }
+details.panel > summary::before { content: "▸ "; color: var(--muted); }
+details.panel[open] > summary::before { content: "▾ "; }
+.row { display: grid; grid-template-columns: 1fr 64px; gap: 2px 8px; align-items: center; margin: 7px 0; }
+.row label { font-size: 13px; color: var(--text); }
+.row .val { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 12px; color: var(--muted); text-align: right; }
+.row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); margin: 0; }
+.row select, .row input[type=color] { grid-column: 2; width: 100%; font: inherit; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: 3px; padding: 2px; }
+.row.sel { grid-template-columns: 1fr 170px; }
+.row.sel select { grid-column: 2; }
+.row.chk { grid-template-columns: 1fr auto; }
+.hint { font-size: 12.5px; color: var(--muted); margin: 6px 0; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.btn { font: inherit; font-size: 13px; padding: 6px 10px; border: 1px solid var(--line); background: var(--field); color: var(--text); border-radius: 3px; cursor: pointer; }
+.btn.rec { background: var(--rec); color: #fff; border-color: var(--rec); }
+.btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.qa { font-size: 13px; padding: 6px 8px; border-radius: 3px; border: 1px solid var(--line); margin: 6px 0; }
+.qa.ok { color: var(--ok); } .qa.bad { color: var(--bad); }
+progress { width: 100%; accent-color: var(--accent); }
+textarea { width: 100%; height: 90px; font: 11.5px "IBM Plex Mono", ui-monospace, monospace; background: var(--field); color: var(--text); border: 1px solid var(--line); border-radius: 3px; }
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; height: auto; }
+  .stage { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); }
+  #viewer, .transport, .beats { width: 100%; }
+  .rack { border-left: 0; overflow: visible; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage">
+    <div class="mast"><h1>Flamingos · blocking v01</h1><p>playblast · 30 s · 24 qps · 720 quadros · 16:9</p></div>
+    <div id="viewer">
+      <canvas id="view"></canvas>
+      <div id="boot">Carregando a cena…</div>
+      <div class="viewtoggle"><button type="button" data-v="film" aria-pressed="true">Câmera do filme</button><button type="button" data-v="work" aria-pressed="false">Vista de trabalho</button></div>
+      <div class="viewtoggle hudtoggle"><button type="button" id="hudBtn" aria-pressed="true" title="Liga/desliga textos e HUD na tela e no vídeo (tecla H)">HUD ligado</button></div>
+    </div>
+    <div class="transport">
+      <button type="button" class="play" id="play">▶ Play</button>
+      <button type="button" id="prev" title="Quadro anterior">◀︎</button>
+      <button type="button" id="next" title="Próximo quadro">▶︎</button>
+      <input type="range" id="scrub" min="0" max="719" step="1" value="0" aria-label="Linha do tempo">
+      <div id="readout">quadro 0001 · 0,00 s</div>
+    </div>
+    <div class="beats" id="beats"></div>
+  </div>
+  <aside class="rack" id="rack"></aside>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { Reflector } from 'three/addons/objects/Reflector.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ======================================================== tempo / estado
+const FPS = 24, DUR = 30, NF = FPS * DUR;
+const STORE = 'flamingos-blocking-v11';
+const DEF = {
+  tEnter: 8, tLand: 19.5, landSpread: 0.9, spinDelay: 0.3, spinDur: 6,
+  count: 26, flockSpread: 1, landDist: 16, heroCount: 1, heroDist: 5.5, heroX: 0.8, heroDelay: 1.2, flightH: 16, approach: 1, flapAmp: 0, flapHz: 2.6, birdScale: 1, model: 'corpo', ripples: 1, splash: false, bodyW: 0.55, bodyH: 0.5, bodyL: 0.9, birdLook: 'rosa',
+  lensOpen: 42, lens: 35, lensEnd: 24, dollyBack: 8, pitch0: -5, pitch1: 3, camH0: 1.2, camH1: 1.6, spinDir: 1, spinMode: 'junto', breathe: 0.3,
+  waterRef: 'nenhuma', gridOp: 0.22, gridCell: 2, mirrorOpen: true,
+  mtDist: 800, mtH: 220, mtWidth: 1.45, hills: 1, clouds: 1, fog: 0.35, waterTint: 0.85, shore: 1,
+  cPink: '#ff5c9a', cTip: '#2a1418', cMount: '#5b4c63', cSnow: '#c9d6dc', cHills: '#775a74', cShore: '#7a5b51',
+  cSkyTop: '#6f6480', cSkyMid: '#c99a7c', cSkyHor: '#9ba091', cWater: '#a9b6b4',
+  look: 'cinza', greyContrast: 1, greyBright: 0, distAmt: 1, ripDist: 1, birdWobble: 1, waterMove: 1, waveSize: 1, waveSpeed: 1, waveStretch: 0.3,
+  hud: true, safe: false, previewRes: 540, playRate: 1,
+  rRes: 1080, rHud: true, rBitrate: 24
+};
+let P = Object.assign({}, DEF);
+try { const s = JSON.parse(localStorage.getItem(STORE) || 'null'); if (s) Object.assign(P, s); } catch (e) {}
+function save() { try { localStorage.setItem(STORE, JSON.stringify(P)); } catch (e) {} }
+// o giro nasce do pouso: começa no pouso médio + atraso
+function derive() { P.tSpin = P.tLand + (P.heroCount > 0 ? P.heroDelay : 0) + P.spinDelay; }
+derive();
+
+// ======================================================== util
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const sstep = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+const easeSine = (x) => 0.5 - 0.5 * Math.cos(Math.PI * clamp(x));
+const D2R = Math.PI / 180;
+function rng(seed) { let a = seed >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+// ======================================================== renderer
+const view = document.getElementById('view');
+const vctx = view.getContext('2d');
+const glCanvas = document.createElement('canvas');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true, preserveDrawingBuffer: true });
+} catch (e) { document.getElementById('boot').textContent = 'WebGL indisponível neste navegador.'; throw e; }
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+renderer.setPixelRatio(1);
+
+const scene = new THREE.Scene();
+const filmCam = new THREE.PerspectiveCamera(30, 16 / 9, 0.1, 6000);
+filmCam.filmGauge = 35; filmCam.layers.enable(2);
+const workCam = new THREE.PerspectiveCamera(40, 16 / 9, 0.5, 8000);
+workCam.position.set(70, 50, 60);
+workCam.layers.enable(1); workCam.layers.enable(2);
+const controls = new OrbitControls(workCam, view);
+controls.target.set(0, 3, -12); controls.enableDamping = false; controls.enabled = false; controls.update();
+controls.addEventListener('change', () => { if (viewMode === 'work' && !playing) draw(); });
+
+const hemi = new THREE.HemisphereLight(0xe2d2e4, 0x5a4f5c, 1.35);
+const sun = new THREE.DirectionalLight(0xffd2b0, 1.9); sun.position.set(-420, 260, 380);
+const fill = new THREE.DirectionalLight(0xb9c4e0, 0.5); fill.position.set(300, 120, -200);
+scene.add(hemi, sun, fill);
+
+let ambient = [], gridMat = null;
+let world = null, water = null, birds = [], camMarker = null, camHelper = null, pathLines = null;
+const geoBox = new THREE.BoxGeometry(1, 1, 1);
+const geoRing = new THREE.RingGeometry(0.9, 1, 48); geoRing.rotateX(-Math.PI / 2);
+
+function lambert(c, extra = {}) { return new THREE.MeshLambertMaterial(Object.assign({ color: new THREE.Color(c), flatShading: true }, extra)); }
+function box(mat, sx, sy, sz, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(geoBox, mat); m.scale.set(sx, sy, sz); m.position.set(x, y, z); return m; }
+
+// ======================================================== céu
+function makeSky() {
+  const g = new THREE.SphereGeometry(4000, 48, 24);
+  const m = new THREE.ShaderMaterial({
+    side: THREE.BackSide, depthWrite: false, fog: false,
+    uniforms: { top: { value: new THREE.Color(C.cSkyTop) }, mid: { value: new THREE.Color(C.cSkyMid) }, hor: { value: new THREE.Color(C.cSkyHor) } },
+    vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+    fragmentShader: `uniform vec3 top, mid, hor; varying vec3 vD;
+      void main(){ float e = vD.y;
+        vec3 c = mix(hor, mid, smoothstep(0.0, 0.10, e));
+        c = mix(c, top, smoothstep(0.10, 0.45, e));
+        if (e < 0.0) c = hor * 0.9;
+        gl_FragColor = vec4(c, 1.0);
+        #include <colorspace_fragment>
+      }`
+  });
+  const s = new THREE.Mesh(g, m); s.renderOrder = -10; return s;
+}
+
+// ======================================================== água: espelho com distorção (riples do pouso + água mexendo)
+// Antes do primeiro pouso não há distorção nenhuma: a abertura continua um espelho perfeito.
+const RIP_MAX = 32;
+const WaterShader = {
+  name: 'WaterShader',
+  uniforms: { color: { value: null }, tDiffuse: { value: null }, textureMatrix: { value: null },
+    uRip: { value: Array.from({ length: RIP_MAX }, () => new THREE.Vector4()) }, uRipN: { value: 0 },
+    uImpact: { value: 0 }, uWobble: { value: 0 }, uAmb: { value: 0 }, uTime: { value: 0 }, uSize: { value: 1 }, uSpeed: { value: 1 }, uStretch: { value: 0.3 } },
+  vertexShader: `uniform mat4 textureMatrix; varying vec4 vUv; varying vec3 vW;
+    void main(){ vUv = textureMatrix * vec4(position, 1.0); vW = (modelMatrix * vec4(position, 1.0)).xyz;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform vec3 color; uniform sampler2D tDiffuse; varying vec4 vUv; varying vec3 vW;
+    uniform vec4 uRip[${RIP_MAX}]; uniform int uRipN;
+    uniform float uImpact, uWobble, uAmb, uTime, uSize, uSpeed, uStretch;
+    float bo(float a, float b){ return a < 0.5 ? 2.0 * a * b : 1.0 - 2.0 * (1.0 - a) * (1.0 - b); }
+    void main(){
+      vec2 p = vW.xz; vec2 offR = vec2(0.0), offW = vec2(0.0); float shade = 0.0;
+      float t = uTime * uSpeed, k = 1.0 / uSize;
+      for (int i = 0; i < ${RIP_MAX}; i++) {
+        if (i >= uRipN) break;
+        vec4 r = uRip[i];                          // x, z, tempo desde o pouso (s), força
+        vec2 d = p - r.xy; float L = length(d) + 1e-4; vec2 n = d / L;
+        // 1) impacto do pouso: frente de onda que acompanha os anéis e morre
+        float x = L - (0.3 + 1.1 * r.z);
+        float env = exp(-x * x / (0.3 + 0.9 * r.z)) * exp(-0.6 * r.z) * smoothstep(0.0, 0.08, r.z);
+        float w = sin(x * 7.0 * k) * env * r.w;
+        // 2) ondinhas contínuas em volta de cada flamingo parado: o reflexo dele treme
+        float w2 = sin(L * 5.0 * k - t * 4.0 + r.x * 3.1) * exp(-L / (1.8 * uSize)) * smoothstep(0.15, 1.2, r.z) * r.w;
+        offR += n * w; offW += n * w2;
+        shade += w * step(1e-5, uImpact) + 0.5 * w2 * step(1e-5, uWobble);
+      }
+      // 3) água mexendo: ondas que correm em profundidade, entortando o reflexo na horizontal
+      vec2 q = p * k;
+      vec2 amb = vec2(sin(q.y * 2.2 + t * 1.6 + 1.5 * sin(q.x * 0.7 + t * 0.5)) + 0.7 * sin(q.y * 3.7 - t * 2.1 + q.x * 0.9) + 0.5 * sin((q.x + q.y) * 5.3 + t * 2.9),
+                      cos(q.x * 1.3 + t * 1.2) + 0.6 * cos(q.y * 2.9 - t * 1.8));
+      vec2 st = vec2(1.0, uStretch);
+      vec2 off = offR * uImpact + (offW * uWobble + amb * uAmb) * st;
+      off *= 1.0 / (1.0 + length(vW - cameraPosition) / 30.0);
+      vec4 uv = vUv; uv.xy += off * uv.w;
+      vec4 base = texture2DProj(tDiffuse, uv);
+      vec3 c = vec3(bo(base.r, color.r), bo(base.g, color.g), bo(base.b, color.b));
+      c *= 1.0 + 0.08 * clamp(shade, -1.0, 1.0);
+      gl_FragColor = vec4(c, 1.0);
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    }`
+};
+
+// ======================================================== flamingo (blocos)
+function makeBird(matPink, matTip, matDark) {
+  const root = new THREE.Group();
+  const body = new THREE.Group(); root.add(body);
+  const parts = { root, body };
+  if (P.model === 'corpo') {
+    // só o bloco do corpo: tira a silhueta de flamingo para a IA reinterpretar; pousado, encosta na água
+    body.add(box(matPink, P.bodyW, P.bodyH, P.bodyL));
+    parts.cube = true; return parts;
+  }
+  if (P.model === 'cubo') {
+    body.add(box(matPink, 0.5, 0.5, 0.85));
+    const wl = new THREE.Group(), wr = new THREE.Group();
+    wl.position.set(-0.25, 0.1, 0); wr.position.set(0.25, 0.1, 0);
+    wl.add(box(matPink, 0.9, 0.04, 0.35, -0.45, 0, 0)); wr.add(box(matPink, 0.9, 0.04, 0.35, 0.45, 0, 0));
+    body.add(wl, wr); Object.assign(parts, { wl, wr });
+    parts.cube = true; return parts;
+  }
+  body.add(box(matPink, 0.36, 0.32, 0.72, 0, 0, 0));
+  body.add(box(matPink, 0.22, 0.18, 0.22, 0, 0.02, -0.42)); // cauda
+  const neck = new THREE.Group(); neck.position.set(0, 0.1, 0.3); body.add(neck);
+  neck.add(box(matPink, 0.08, 0.86, 0.08, 0, 0.43, 0));
+  const head = new THREE.Group(); head.position.set(0, 0.86, 0); neck.add(head);
+  head.add(box(matPink, 0.13, 0.13, 0.2, 0, 0.02, 0.02));
+  head.add(box(matDark, 0.07, 0.07, 0.16, 0, -0.03, 0.18)); // bico
+  const legs = [];
+  for (const sx of [-0.08, 0.08]) { const l = new THREE.Group(); l.position.set(sx, -0.14, 0); l.add(box(matPink, 0.045, 0.86, 0.045, 0, -0.43, 0)); body.add(l); legs.push(l); }
+  const wl = new THREE.Group(), wr = new THREE.Group();
+  wl.position.set(-0.17, 0.1, 0.06); wr.position.set(0.17, 0.1, 0.06);
+  wl.add(box(matPink, 0.5, 0.035, 0.32, -0.25, 0, 0), box(matTip, 0.38, 0.035, 0.26, -0.68, 0, -0.02));
+  wr.add(box(matPink, 0.5, 0.035, 0.32, 0.25, 0, 0), box(matTip, 0.38, 0.035, 0.26, 0.68, 0, -0.02));
+  body.add(wl, wr);
+  Object.assign(parts, { neck, head, legs, wl, wr });
+  return parts;
+}
+
+// ======================================================== bando: dados determinísticos
+function hfovHalf() { const vf = 2 * Math.atan(35 / (16 / 9) / 2 / P.lens); return Math.atan(Math.tan(vf / 2) * 16 / 9); }
+function makeFlockData() {
+  // bando ao fundo: uma faixa larga e rasa no meio do quadro (como na referência)
+  const r = rng(7); const out = []; let tries = 0;
+  while (out.length < P.count && tries < 12000) {
+    tries++;
+    const x = (r() - 0.5) * 2 * (1.1 * P.landDist + 4) * P.flockSpread, z = -Math.max(4, P.landDist + (r() - 0.5) * 2 * (0.25 * P.landDist + 1) * P.flockSpread);
+    if (out.some((b) => Math.hypot(b.L.x - x, b.L.z - z) < 1.8)) continue;
+    out.push({ L: new THREE.Vector3(x, 0, z) });
+  }
+  const hh = hfovHalf();
+  const finish = (b, rb, sz, sy) => {
+    const sx = Math.abs(sz) * Math.tan(hh) * 1.04 + 3 + rb() * 6;
+    b.S = new THREE.Vector3(sx, sy, sz);
+    const dir = new THREE.Vector3(b.L.x - b.S.x, 0, b.L.z - b.S.z).normalize();
+    const Dh = Math.hypot(b.L.x - b.S.x, b.L.z - b.S.z);
+    const vEnd = 0.6 * Dh / (b.t1 - b.t0);
+    b.skid = clamp(vEnd * 0.6 / 2, 0.3, b.hero ? 1.0 : 2.2);
+    b.T = b.L.clone().addScaledVector(dir, -b.skid);
+    b.dir = dir; b.yaw = Math.atan2(dir.x, dir.z);
+    b.flap = P.flapHz * (0.9 + 0.2 * rb()); b.ph = rb() * Math.PI * 2;
+    b.turn = (rb() - 0.5) * 1.4; b.feed = rb() > 0.55; b.feedT = 4 + 3 * rb();
+    b.spl = []; for (let k = 0; k < 6; k++) { const a = rb() * Math.PI * 2, s = 0.6 + rb() * 1.4; b.spl.push([Math.cos(a) * s, 2 + rb() * 2.2, Math.sin(a) * s]); }
+  };
+  out.forEach((b, i) => {
+    const rb = rng(1000 + i * 31);
+    b.t1 = P.tLand + (rb() - 0.5) * 2 * P.landSpread;
+    b.t0 = P.tEnter + rb() * 1.6;
+    if (b.t1 < b.t0 + 4) b.t1 = b.t0 + 4;
+    finish(b, rb, b.L.z - (55 + rb() * 40) * P.approach, P.flightH * (0.75 + 0.5 * rb()));
+  });
+  // flamingo(s) herói: pousa bem perto da câmera, depois do bando
+  for (let h = 0; h < P.heroCount; h++) {
+    const rb = rng(5000 + h * 17);
+    const side = h === 0 ? 0 : (h % 2 ? -1 : 1) * 2.4 * Math.ceil(h / 2);
+    const b = { hero: true, L: new THREE.Vector3(P.heroX + side, 0, -(P.heroDist + h * 1.6)) };
+    b.t1 = P.tLand + P.heroDelay + h * 0.5;
+    b.t0 = b.t1 - Math.max(3, (P.tLand - P.tEnter) * 0.7);
+    finish(b, rb, b.L.z - 30 * P.approach, P.flightH * 0.4);
+    // depois do pouso vira 3/4 para a câmera
+    b.turn = (Math.atan2(-b.L.x, -b.L.z) * 0 - 0.65 * Math.sign(b.yaw || 1)) - b.yaw;
+    b.turn = Math.atan2(Math.sin(b.turn), Math.cos(b.turn)) * 0.8;
+    b.feed = false;
+    out.push(b);
+  }
+  return out;
+}
+
+function birdState(b, t) {
+  const D = b.t1 - b.t0;
+  const u = (t - b.t0) / D;
+  const uc = clamp(u);
+  const pos = new THREE.Vector3();
+  if (u < 0) { pos.copy(b.S).addScaledVector(b.T.clone().sub(b.S).setY(0), 1.4 * u); pos.y = b.S.y; }
+  else if (u <= 1) {
+    const e = 1.4 * uc - 0.4 * uc * uc;
+    pos.lerpVectors(b.S, b.T, e);
+    pos.y = b.S.y * (1 - sstep(0.12, 1, uc));
+  } else {
+    const a = clamp((t - b.t1) / 0.6); const k = 1 - (1 - a) * (1 - a);
+    pos.copy(b.T).addScaledVector(b.dir, b.skid * k); pos.y = 0;
+  }
+  const flare = sstep(0.82, 1, uc) * (1 - sstep(b.t1, b.t1 + 0.7, t));
+  const stand = sstep(b.t1 - 0.2, b.t1 + 0.9, t);
+  const fold = sstep(b.t1 + 0.3, b.t1 + 1.3, t);
+  const legDrop = sstep(0.72, 0.96, uc);
+  const ft = t - b.t0;
+  const flapA = P.flapAmp * (1 - sstep(0.7, 0.85, uc) * 0.7);
+  const glide = 0.08 + 0.04 * Math.sin(2 * Math.PI * ft / 5 + b.ph); // planando: asas abertas, quase paradas
+  const flap = glide + flapA * Math.cos(2 * Math.PI * b.flap * ft + b.ph);
+  const flareZ = 0.85 + 0.3 * P.flapAmp * Math.cos(2 * Math.PI * 4.5 * ft);
+  const wingZ = lerp(lerp(flap, flareZ, flare), -0.12, fold);
+  const bob = (0.3 * P.flapAmp * Math.sin(2 * Math.PI * b.flap * ft + b.ph - 0.6) + 0.15 * Math.sin(2 * Math.PI * ft / 4 + b.ph)) * (1 - stand);
+  return { pos, bodyY: 1.0 + pos.y + bob * (u < 1 ? 1 : 0), flare, stand, fold, legDrop, wingZ, u };
+}
+
+function poseBird(b, t) {
+  const s = birdState(b, t), p = b.parts, sc = P.birdScale;
+  p.root.position.set(s.pos.x, 0, s.pos.z);
+  p.root.scale.setScalar(sc);
+  p.root.rotation.y = b.yaw + b.turn * sstep(b.t1 + 0.8, b.t1 + 3.5, t);
+  const hh = P.model === 'corpo' ? P.bodyH / 2 : 0.25; // base do bloco encosta na água quando pousado
+  p.body.position.y = p.cube ? Math.max(hh, s.bodyY - 1 + hh) : s.bodyY;
+  p.body.rotation.x = -0.5 * s.flare;
+  if (p.wr) {
+    const ws = 1 - 0.45 * s.fold; p.wr.scale.x = ws; p.wl.scale.x = ws;
+    p.wr.rotation.set(0, 1.35 * s.fold, -s.wingZ, 'YXZ');
+    p.wl.rotation.set(0, -1.35 * s.fold, s.wingZ, 'YXZ');
+  }
+  if (!p.cube) {
+    const feed = b.feed ? s.stand * 0.9 * sstep(0.3, 0.9, 0.5 + 0.5 * Math.sin(2 * Math.PI * t / b.feedT + b.ph)) : 0;
+    const nk = 1.35 * (1 - s.stand) + feed * 1.6;
+    p.neck.rotation.x = nk;
+    p.head.rotation.x = -nk * (1 - feed * 0.35) + feed * 0.9;
+    const la = 1.35 * (1 - s.legDrop) + 0.5 * s.flare;
+    for (const l of p.legs) l.rotation.x = la;
+  }
+  // respingos e anéis
+  const a = t - b.t1;
+  for (let k = 0; k < b.splash.length; k++) {
+    const m = b.splash[k], v = b.spl[k];
+    const vis = P.splash && a > 0 && a < 0.85 && P.ripples > 0;
+    m.visible = vis;
+    if (vis) { const y = v[1] * a - 4.9 * a * a; m.visible = y > 0; m.position.set(b.T.x + v[0] * a, y, b.T.z + v[2] * a); }
+  }
+  for (let k = 0; k < b.rings.length; k++) {
+    const m = b.rings[k], ak = a - k * 0.35, life = 2.6;
+    const vis = ak > 0 && ak < life && P.ripples > 0;
+    m.visible = vis;
+    if (vis) { const r = (0.3 + 1.1 * ak) * P.ripples; m.scale.set(r, 1, r); m.position.set(b.L.x, 0.03, b.L.z); m.material.opacity = 0.8 * Math.pow(1 - ak / life, 1.5); }
+  }
+}
+
+// ======================================================== mundo
+function disposeTree(o) { o.traverse((n) => { if (n.geometry && n.geometry !== geoBox && n.geometry !== geoRing) n.geometry.dispose(); if (n.material) { const ms = Array.isArray(n.material) ? n.material : [n.material]; ms.forEach((m) => m.dispose()); } }); }
+// paleta ativa: playblast em tons de cinza (flamingo continua rosa) ou as cores da referência
+let C = {};
+const GREYS = { cSkyTop: 0.2, cSkyMid: 0.3, cSkyHor: 0.42, cMount: 0.46, cSnow: 0.9, cHills: 0.2, cShore: 0.12, cWater: 0.8, cTip: 0.08, cSalt: 0.95, cCloud: 0.55 };
+function palette() {
+  if (P.look === 'cinza') {
+    C = {};
+    for (const [k, v] of Object.entries(GREYS)) { const g = clamp(0.5 + (v - 0.5) * P.greyContrast + P.greyBright, 0.02, 0.99); C[k] = '#' + new THREE.Color().setRGB(g, g, g, THREE.SRGBColorSpace).getHexString(); }
+    hemi.color.set(0xffffff); hemi.groundColor.set(0x404040); sun.color.set(0xffffff); fill.color.set(0xffffff);
+    hemi.intensity = 1.0; sun.intensity = 1.3; fill.intensity = 0.3;
+  } else {
+    C = { cSkyTop: P.cSkyTop, cSkyMid: P.cSkyMid, cSkyHor: P.cSkyHor, cMount: P.cMount, cSnow: P.cSnow, cHills: P.cHills, cShore: P.cShore, cWater: P.cWater, cTip: P.cTip, cSalt: '#e9ece8',
+      cCloud: '#' + new THREE.Color(P.cSkyMid).lerp(new THREE.Color('#ffffff'), 0.12).getHexString() };
+    hemi.color.set(0xe2d2e4); hemi.groundColor.set(0x5a4f5c); sun.color.set(0xffd2b0); fill.color.set(0xb9c4e0);
+    hemi.intensity = 1.35; sun.intensity = 1.9; fill.intensity = 0.5;
+  }
+}
+function build() {
+  palette();
+  if (world) { scene.remove(world); disposeTree(world); }
+  if (water) { scene.remove(water); water.getRenderTarget().dispose(); water.material.dispose(); }
+  world = new THREE.Group(); scene.add(world);
+  world.add(makeSky());
+  scene.fog = new THREE.Fog(new THREE.Color(C.cSkyHor), 150, lerp(9000, 900, P.fog));
+
+  // montanha principal + neve
+  const H = P.mtH, R = H * P.mtWidth;
+  const hc = H * 0.33, hb = H + 10 - hc, rc = R * hc / (H + 10);
+  const mtn = new THREE.Mesh(new THREE.CylinderGeometry(rc, R, hb, 9, 1, true), lambert(C.cMount));
+  mtn.position.set(0, hb / 2 - 10, -P.mtDist); mtn.rotation.y = 0.3; world.add(mtn);
+  const snow = new THREE.Mesh(new THREE.ConeGeometry(rc, hc, 9, 1, true), lambert(C.cSnow));
+  snow.position.set(0, H - hc / 2, -P.mtDist); snow.rotation.y = 0.3; world.add(snow);
+  if (P.hills) {
+    const hm = lambert(C.cHills);
+    for (const [x, z, h, r] of [[-620, -1.15, 0.42, 1.6], [-420, -1.3, 0.3, 1.9], [640, -1.2, 0.38, 1.7], [900, -1.05, 0.26, 2.2]]) {
+      const c = new THREE.Mesh(new THREE.ConeGeometry(H * h * r, H * h, 7, 1), hm);
+      c.position.set(x * P.mtDist / 800, H * h / 2 - 2, P.mtDist * z); c.rotation.y = x; world.add(c);
+    }
+  }
+  if (P.shore) {
+    const zs = -Math.min(P.mtDist * 0.55, 460);
+    world.add(box(lambert(C.cShore), 6000, 0.7, 40, 0, 0.0, zs - 20));
+    world.add(box(lambert(C.cSalt), 6000, 0.45, 2.5, 0, 0.0, zs + 1.5));
+  }
+  if (P.clouds) {
+    const cm = new THREE.MeshBasicMaterial({ color: new THREE.Color(C.cCloud), fog: false });
+    const r = rng(42);
+    for (let i = 0; i < 9; i++) {
+      const az = (r() - 0.5) * 1.6, el = (3 + r() * 9) * D2R, d = 2600;
+      const c = new THREE.Mesh(new THREE.SphereGeometry(1, 12, 6), cm);
+      c.scale.set(180 + r() * 260, 14 + r() * 18, 60);
+      c.position.set(Math.sin(az) * d * Math.cos(el), Math.sin(el) * d, -Math.cos(az) * d * Math.cos(el));
+      c.lookAt(0, c.position.y, 0); world.add(c);
+    }
+  }
+
+  // água espelhada
+  const [w, h] = curSize();
+  water = new Reflector(new THREE.PlaneGeometry(9000, 9000), { textureWidth: w, textureHeight: h, color: new THREE.Color(C.cWater).multiplyScalar(P.waterTint), clipBias: 0.002, shader: WaterShader });
+  water.rotation.x = -Math.PI / 2; scene.add(water);
+
+  // referência do plano da água: grade na camada 2 (aparece no filme, não entra no reflexo) + ondinhas
+  gridMat = null;
+  if (P.waterRef === 'grade' || P.waterRef === 'ambos') {
+    const grid = new THREE.GridHelper(120, Math.round(120 / P.gridCell), 0xffffff, 0xffffff);
+    grid.material.transparent = true; grid.material.depthWrite = false; grid.material.opacity = P.gridOp; grid.material.fog = false;
+    grid.position.set(0, 0.015, -50); grid.layers.set(2); world.add(grid); gridMat = grid.material;
+  }
+  ambient = [];
+  if (P.waterRef === 'ondas' || P.waterRef === 'ambos') {
+    const r = rng(77);
+    for (let i = 0; i < 16; i++) {
+      const d = 5 + r() * 45, a = (r() - 0.5) * 1.6;
+      const m = new THREE.Mesh(geoRing, new THREE.MeshBasicMaterial({ color: 0xf4f6f6, transparent: true, depthWrite: false }));
+      m.userData = { x: Math.sin(a) * d * 1.2, z: -Math.cos(a) * d, per: 3.5 + r() * 3, ph: r(), size: 1.5 + r() * 2.5 };
+      world.add(m); ambient.push(m);
+    }
+  }
+
+  // bando
+  // versão do vídeo: blocos rosa, blocos cinza, ou sem blocos (só água: anéis + distorção continuam)
+  const matPink = lambert(P.birdLook === 'cinza' ? '#a8a8a8' : P.cPink), matTip = lambert(C.cTip), matDark = lambert('#1d1418');
+  const splashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  birds = makeFlockData();
+  for (const b of birds) {
+    b.parts = makeBird(matPink, matTip, matDark); world.add(b.parts.root);
+    b.parts.root.visible = P.birdLook !== 'oculto';
+    b.splash = b.spl.map(() => { const m = box(splashMat, 0.13, 0.13, 0.13); world.add(m); return m; });
+    b.rings = [0, 1, 2].map(() => { const m = new THREE.Mesh(geoRing, new THREE.MeshBasicMaterial({ color: 0xf4f6f6, transparent: true, depthWrite: false })); world.add(m); return m; });
+  }
+
+  // ajudantes da vista de trabalho (camada 1: nunca aparecem no filme nem no reflexo)
+  camMarker = new THREE.Mesh(new THREE.ConeGeometry(1.4, 3.2, 12), new THREE.MeshBasicMaterial({ color: 0xff3030 }));
+  camMarker.geometry.rotateX(-Math.PI / 2); camMarker.layers.set(1); world.add(camMarker);
+  const pts = [];
+  for (const b of birds) { for (let f = 0; f < NF; f += 4) { const s = birdState(b, f / FPS); pts.push(s.pos.x, s.bodyY, s.pos.z); const s2 = birdState(b, (f + 4) / FPS); pts.push(s2.pos.x, s2.bodyY, s2.pos.z); } }
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  pathLines = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x3d8bff })); pathLines.layers.set(1); world.add(pathLines);
+  const cp = [];
+  for (let f = 0; f < NF; f += 2) { const c = camAt(f / FPS); cp.push(c.pos.x, c.pos.y, c.pos.z); const c2 = camAt((f + 2) / FPS); cp.push(c2.pos.x, c2.pos.y, c2.pos.z); }
+  const cg = new THREE.BufferGeometry(); cg.setAttribute('position', new THREE.Float32BufferAttribute(cp, 3));
+  const cl = new THREE.LineSegments(cg, new THREE.LineBasicMaterial({ color: 0xff3030 })); cl.layers.set(1); world.add(cl);
+  if (camHelper) { scene.remove(camHelper); camHelper.dispose(); }
+  camHelper = new THREE.CameraHelper(filmCam); camHelper.layers.set(1); scene.add(camHelper);
+  needQA = true;
+}
+
+// ======================================================== câmera do filme
+function camAt(t) {
+  const s = clamp((t - P.tSpin) / P.spinDur);
+  let sr, sp;
+  if (P.spinMode === 'junto') { sr = easeSine(s); sp = easeSine(s); }
+  else if (P.spinMode === 'roll-primeiro') { sr = easeSine(s / 0.62); sp = easeSine((s - 0.38) / 0.62); }
+  else { sr = easeSine((s - 0.38) / 0.62); sp = easeSine(s / 0.62); }
+  const br = P.breathe;
+  const roll = Math.PI * (1 - sr) * P.spinDir + br * 0.6 * D2R * Math.sin(2 * Math.PI * t / 10);
+  const pitch = lerp(P.pitch0, P.pitch1, sp) * D2R + br * 0.5 * D2R * Math.sin(2 * Math.PI * t / 7.5 + 1);
+  const yaw = br * 0.8 * D2R * Math.sin(2 * Math.PI * t / 15 + 0.5);
+  const h = lerp(P.camH0, P.camH1, sp) + br * 0.06 * Math.sin(2 * Math.PI * t / 6);
+  const zo = easeSine(t / Math.max(0.1, P.tLand));   // zoom-out leve da abertura até o pouso
+  const zg = easeSine(s);                            // zoom-out + recuo junto com o giro
+  const lens = lerp(lerp(P.lensOpen, P.lens, zo), P.lensEnd, zg);
+  return { pos: new THREE.Vector3(0, h, P.dollyBack * zg), rot: new THREE.Euler(pitch, yaw, roll, 'YXZ'), roll, pitch, s, lens };
+}
+function applyCam(t) {
+  const c = camAt(t);
+  filmCam.position.copy(c.pos); filmCam.rotation.copy(c.rot);
+  filmCam.setFocalLength(c.lens); filmCam.aspect = 16 / 9; filmCam.updateProjectionMatrix(); filmCam.updateMatrixWorld();
+  return c;
+}
+
+// ======================================================== QA da câmera (orçamento da skill)
+let needQA = true, qaInfo = null;
+function runQA() {
+  const sp = [];
+  let q0 = new THREE.Quaternion().setFromEuler(camAt(0).rot);
+  for (let f = 1; f < NF; f++) {
+    const q1 = new THREE.Quaternion().setFromEuler(camAt(f / FPS).rot);
+    sp.push(q0.angleTo(q1) / D2R * FPS); q0 = q1;
+  }
+  const moving = sp.filter((v) => v > 2).sort((a, b) => a - b);
+  const max = Math.max(...sp), p95 = moving.length ? moving[Math.floor(moving.length * 0.95)] : 0;
+  const ok = max <= 50 && p95 <= 35 * 1.6;
+  const minDur = P.spinDur * max / 50;
+  qaInfo = { max, p95, ok, minDur };
+  needQA = false;
+  const box = document.getElementById('qa');
+  if (box) {
+    box.className = 'qa ' + (max <= 50 ? 'ok' : 'bad');
+    box.textContent = max <= 50 ? `Suavidade ok · pico do giro ${max.toFixed(0)}°/s (limite 50°/s)` : `Rápido demais · pico ${max.toFixed(0)}°/s — mínimo ${minDur.toFixed(1).replace('.', ',')} s de giro`;
+  }
+}
+
+// ======================================================== HUD do playblast
+function beatAt(t) {
+  if (t < P.tEnter) return '01 · ABERTURA — reflexo (câmera em roll 180°)';
+  if (t < P.tLand - P.landSpread) return '02 · ENTRADA DO BANDO';
+  if (t < P.tSpin) return '03 · POUSO NA ÁGUA';
+  if (t < P.tSpin + P.spinDur) return '04 · GIRO 180°';
+  return '05 · REVELAÇÃO';
+}
+function tc(f) { const s = Math.floor(f / FPS), fr = f % FPS; const p = (n) => String(n).padStart(2, '0'); return `00:00:${p(s)}:${p(fr)}`; }
+function drawHUD(ctx, w, h, f, t, c) {
+  const u = h / 1080;
+  if (P.safe) {
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = Math.max(1, 2 * u);
+    ctx.strokeRect(w * 0.05, h * 0.05, w * 0.9, h * 0.9); ctx.strokeRect(w * 0.1, h * 0.1, w * 0.8, h * 0.8);
+    ctx.beginPath(); ctx.moveTo(w / 2 - 20 * u, h / 2); ctx.lineTo(w / 2 + 20 * u, h / 2); ctx.moveTo(w / 2, h / 2 - 20 * u); ctx.lineTo(w / 2, h / 2 + 20 * u); ctx.stroke();
+  }
+  ctx.font = `500 ${Math.round(26 * u)}px "IBM Plex Mono", ui-monospace, Menlo, monospace`;
+  ctx.textBaseline = 'alphabetic';
+  const pad = 34 * u, line = 34 * u;
+  const txt = (s, x, y, align) => { ctx.textAlign = align; ctx.fillStyle = 'rgba(0,0,0,.55)'; ctx.fillText(s, x + 2 * u, y + 2 * u); ctx.fillStyle = 'rgba(255,255,255,.92)'; ctx.fillText(s, x, y); };
+  txt('FLAMINGOS · BLOCKING v01', pad, pad + 20 * u, 'left');
+  txt(`cam_main · ${Math.round(c.lens)} mm`, pad, pad + 20 * u + line, 'left');
+  txt(beatAt(t), w - pad, pad + 20 * u, 'right');
+  txt(`roll ${Math.round(Math.abs(c.roll) / D2R)}° · tilt ${(c.pitch / D2R).toFixed(0)}°`, w - pad, pad + 20 * u + line, 'right');
+  txt(tc(f), pad, h - pad, 'left');
+  txt(`quadro ${String(f + 1).padStart(4, '0')} / ${NF}`, w - pad, h - pad, 'right');
+  txt('24 qps', w / 2, h - pad, 'center');
+}
+
+// ======================================================== desenho
+let curW = 0, curH = 0, rendering = false, viewMode = 'film';
+function curSize() { if (rendering) return [curW, curH]; const h = P.previewRes; return [Math.round(h * 16 / 9 / 2) * 2, h]; }
+let lastSize = '';
+function ensureSize() {
+  const [w, h] = curSize(), key = w + 'x' + h;
+  if (key === lastSize) return [w, h];
+  lastSize = key;
+  renderer.setSize(w, h, false); view.width = w; view.height = h;
+  if (water) water.getRenderTarget().setSize(w, h);
+  workCam.aspect = 16 / 9; workCam.updateProjectionMatrix();
+  return [w, h];
+}
+function renderFrame(t, opts = {}) {
+  const [w, h] = ensureSize();
+  const f = Math.min(NF - 1, Math.round(t * FPS));
+  const c = applyCam(t);
+  for (const b of birds) poseBird(b, t);
+  const zg = easeSine(c.s);
+  if (gridMat) gridMat.opacity = P.gridOp * (1 - 0.6 * zg);
+  // espelho perfeito na abertura (o reflexo não pode parecer mais escuro que o "mundo"), água normal depois do giro
+  if (water) { const wc = new THREE.Color(C.cWater).multiplyScalar(P.waterTint); water.material.uniforms.color.value.copy(P.mirrorOpen ? new THREE.Color(1, 1, 1).lerp(wc, zg) : wc);
+    const U = water.material.uniforms, act = [];
+    for (const b of birds) { const a = t - b.t1; if (a > 0) act.push([b.L.x, b.L.z, a, b.hero ? 1.5 : 1]); }
+    act.sort((p, q) => (p[0] * p[0] + p[1] * p[1]) - (q[0] * q[0] + q[1] * q[1])); // os mais perto da câmera primeiro
+    U.uRipN.value = Math.min(RIP_MAX, act.length);
+    for (let i = 0; i < U.uRipN.value; i++) U.uRip.value[i].set(...act[i]);
+    const D = P.distAmt;
+    U.uImpact.value = 0.03 * D * P.ripDist;
+    U.uWobble.value = 0.012 * D * P.birdWobble;
+    U.uAmb.value = 0.004 * D * P.waterMove * sstep(P.tSpin - 0.3, P.tSpin + 2.5, t);
+    U.uSize.value = P.waveSize; U.uSpeed.value = P.waveSpeed; U.uStretch.value = P.waveStretch;
+    U.uTime.value = t;
+  }
+  for (const m of ambient) { const u = m.userData, k = (t / u.per + u.ph) % 1, rr = 0.2 + u.size * k; m.scale.set(rr, 1, rr); m.position.set(u.x, 0.025, u.z); m.material.opacity = 0.5 * Math.sin(Math.PI * k) * (1 - k); }
+  const work = viewMode === 'work' && !rendering;
+  camMarker.position.copy(filmCam.position); camMarker.quaternion.copy(filmCam.quaternion);
+  if (camHelper) camHelper.update();
+  renderer.render(scene, work ? workCam : filmCam);
+  vctx.drawImage(glCanvas, 0, 0, w, h);
+  const hud = P.hud; // uma chave só: o que está na tela é o que vai para o vídeo
+  if (hud && !work) drawHUD(vctx, w, h, f, t, c);
+  if (work && P.hud) { vctx.font = `500 ${Math.round(14 * h / 540)}px "IBM Plex Mono", monospace`; vctx.fillStyle = '#fff'; vctx.textAlign = 'left'; vctx.fillText('Vista de trabalho · arraste para girar · azul = voo dos flamingos · vermelho = câmera', 12, 22 * h / 540); }
+}
+
+// ======================================================== transporte
+let t = 0, playing = false, lastNow = 0;
+const scrub = document.getElementById('scrub'), readout = document.getElementById('readout'), playBtn = document.getElementById('play');
+function frameOf(tt) { return Math.min(NF - 1, Math.round(tt * FPS)); }
+function updReadout() { const f = frameOf(t); scrub.value = f; readout.textContent = `quadro ${String(f + 1).padStart(4, '0')} · ${(f / FPS).toFixed(2).replace('.', ',')} s`; }
+function draw() { if (needQA) runQA(); renderFrame(frameOf(t) / FPS); updReadout(); if (typeof syncHudBtn === 'function') syncHudBtn(); }
+function setPlaying(v) { playing = v; playBtn.textContent = v ? '❚❚ Pausa' : '▶ Play'; lastNow = performance.now(); if (v) requestAnimationFrame(loop); }
+function loop(now) {
+  if (!playing || rendering) return;
+  const dt = (now - lastNow) / 1000; lastNow = now;
+  t += Math.min(dt, 0.1) * P.playRate; if (t >= DUR) t -= DUR;
+  draw(); requestAnimationFrame(loop);
+}
+playBtn.onclick = () => setPlaying(!playing);
+document.getElementById('prev').onclick = () => { setPlaying(false); t = Math.max(0, frameOf(t) - 1) / FPS; draw(); };
+document.getElementById('next').onclick = () => { setPlaying(false); t = Math.min(NF - 1, frameOf(t) + 1) / FPS; draw(); };
+scrub.oninput = () => { setPlaying(false); t = +scrub.value / FPS; draw(); };
+window.addEventListener('keydown', (e) => {
+  if (e.target.closest('input,select,textarea')) return;
+  if (e.code === 'Space') { e.preventDefault(); setPlaying(!playing); }
+  if (e.code === 'ArrowLeft') document.getElementById('prev').click();
+  if (e.code === 'ArrowRight') document.getElementById('next').click();
+  if (e.code === 'KeyH') document.getElementById('hudBtn').click();
+});
+// um botão só para tirar/colocar todos os textos: prévia e vídeo renderizado juntos
+const hudBtn = document.getElementById('hudBtn');
+function syncHudBtn() { hudBtn.setAttribute('aria-pressed', String(!!P.hud)); hudBtn.textContent = P.hud ? 'HUD ligado' : 'HUD desligado'; }
+hudBtn.onclick = () => { P.hud = !P.hud; save(); syncAll(); syncHudBtn(); draw(); };
+document.querySelectorAll('.viewtoggle button[data-v]').forEach((b) => b.onclick = () => {
+  viewMode = b.dataset.v; controls.enabled = viewMode === 'work';
+  document.querySelectorAll('.viewtoggle button[data-v]').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  draw();
+});
+function drawBeats() {
+  const host = document.getElementById('beats'); host.innerHTML = '';
+  const together = Math.abs(P.tSpin - P.tLand) < 1.5;
+  const list = together ? [['Abertura', 0], ['Entrada', P.tEnter], ['Pouso → giro', P.tLand], ['Revelação', P.tSpin + P.spinDur]]
+    : [['Abertura', 0], ['Entrada', P.tEnter], ['Pouso', P.tLand], ['Giro', P.tSpin], ['Revelação', P.tSpin + P.spinDur]];
+  for (const [n, s] of list) {
+    const b = el('button', 'beat', `${n} ${s.toFixed(1).replace('.', ',')}s`); b.type = 'button';
+    b.style.left = `${(s / DUR) * 100}%`; if (s / DUR > 0.9) { b.style.transform = 'translateX(-100%)'; b.style.borderLeft = '0'; b.style.borderRight = '2px solid var(--accent)'; b.style.paddingRight = '4px'; }
+    b.onclick = () => { setPlaying(false); t = s; draw(); };
+    host.append(b);
+  }
+}
+
+// ======================================================== painéis
+const rack = document.getElementById('rack');
+const rebuildKeys = new Set(['birdLook', 'bodyW', 'bodyH', 'bodyL', 'look', 'greyContrast', 'greyBright', 'heroCount', 'heroDist', 'heroX', 'heroDelay', 'flapAmp', 'waterRef', 'gridOp', 'gridCell', 'lensOpen', 'lensEnd', 'dollyBack', 'count', 'flockSpread', 'landDist', 'flightH', 'approach', 'flapHz', 'model', 'tEnter', 'tLand', 'landSpread', 'lens', 'mtDist', 'mtH', 'mtWidth', 'hills', 'clouds', 'fog', 'waterTint', 'shore',
+  'cPink', 'cTip', 'cMount', 'cSnow', 'cHills', 'cShore', 'cSkyTop', 'cSkyMid', 'cSkyHor', 'cWater', 'pitch0', 'pitch1', 'camH0', 'camH1', 'tSpin', 'spinDelay', 'spinDur', 'spinMode', 'spinDir', 'breathe']);
+let rebuildTimer = 0;
+function changed(k) {
+  save();
+  if (k === 'hud') syncAll();
+  derive();
+  if (['heroCount', 'heroDelay', 'tLand', 'spinDelay', 'spinDur', 'spinMode', 'spinDir', 'breathe', 'pitch0', 'pitch1', 'lens'].includes(k)) needQA = true;
+  if (['heroCount', 'heroDelay', 'tEnter', 'tLand', 'spinDelay', 'spinDur', 'landSpread'].includes(k)) drawBeats();
+  if (rebuildKeys.has(k)) { clearTimeout(rebuildTimer); rebuildTimer = setTimeout(() => { build(); draw(); }, 60); }
+  else draw();
+}
+const rows = [];
+function fmt(v, step) { const d = step >= 1 ? 0 : step >= 0.1 ? 1 : 2; return Number(v).toFixed(d).replace('.', ','); }
+function range(k, label, min, max, step, unit = '') { return { k, label, type: 'range', min, max, step, unit }; }
+function select(k, label, opts) { return { k, label, type: 'select', opts }; }
+function color(k, label) { return { k, label, type: 'color' }; }
+function check(k, label) { return { k, label, type: 'check' }; }
+function makeRow(it) {
+  const r = el('div', 'row');
+  const id = 'f_' + it.k; const lab = el('label', null, it.label); lab.htmlFor = id;
+  let inp, val;
+  if (it.type === 'range') {
+    inp = el('input'); inp.type = 'range'; inp.min = it.min; inp.max = it.max; inp.step = it.step;
+    val = el('span', 'val');
+    const sync = () => { inp.value = P[it.k]; val.textContent = fmt(P[it.k], it.step) + it.unit; };
+    inp.oninput = () => { P[it.k] = +inp.value; val.textContent = fmt(P[it.k], it.step) + it.unit; changed(it.k); };
+    inp.ondblclick = () => { P[it.k] = DEF[it.k]; sync(); changed(it.k); };
+    r.append(lab, val, inp); rows.push(sync); sync();
+  } else if (it.type === 'select') {
+    r.classList.add('sel'); inp = el('select');
+    for (const [v, n] of it.opts) { const o = el('option', null, n); o.value = String(v); inp.append(o); }
+    const sync = () => { inp.value = String(P[it.k]); };
+    inp.onchange = () => { const raw = inp.value; P[it.k] = typeof DEF[it.k] === 'number' ? +raw : raw; changed(it.k); };
+    r.append(lab, inp); rows.push(sync); sync();
+  } else if (it.type === 'color') {
+    inp = el('input'); inp.type = 'color';
+    const sync = () => { inp.value = P[it.k]; };
+    inp.oninput = () => { P[it.k] = inp.value; changed(it.k); };
+    r.append(lab, inp); rows.push(sync); sync();
+  } else {
+    r.classList.add('chk'); inp = el('input'); inp.type = 'checkbox';
+    const sync = () => { inp.checked = !!P[it.k]; };
+    inp.onchange = () => { P[it.k] = inp.checked; changed(it.k); };
+    r.append(lab, inp); rows.push(sync); sync();
+  }
+  inp.id = id; return r;
+}
+function panel(title, items, open = false, extra) {
+  const d = el('details', 'panel'); d.open = open;
+  d.append(el('summary', null, title));
+  for (const it of items) d.append(it instanceof HTMLElement ? it : makeRow(it));
+  if (extra) extra(d);
+  rack.append(d); return d;
+}
+function syncAll() { derive(); rows.forEach((f) => f()); drawBeats(); }
+
+panel('Tempo da cena (beats)', [
+  el('div', 'hint', 'Tudo em segundos dentro dos 30 s. Clique nos marcadores abaixo do vídeo para pular até cada beat.'),
+  range('tEnter', 'Bando entra em quadro', 0, 20, 0.1, ' s'),
+  range('tLand', 'Pouso (média)', 6, 28, 0.1, ' s'),
+  range('landSpread', 'Espalhamento dos pousos (±)', 0, 5, 0.1, ' s'),
+  range('spinDelay', 'Giro começa após o toque do herói', -2, 4, 0.1, ' s'),
+  range('spinDur', 'Duração do giro', 1.5, 12, 0.1, ' s')
+], true);
+panel('Flamingos', [
+  range('count', 'Quantidade no bando (fundo)', 1, 80, 1),
+  range('heroCount', 'Flamingos herói (pousam perto da câmera)', 0, 3, 1),
+  range('heroDist', 'Distância do herói à câmera', 2.5, 15, 0.1, ' m'),
+  range('heroX', 'Herói: lado (− esq. / + dir. no plano final)', -6, 6, 0.1, ' m'),
+  range('heroDelay', 'Herói pousa depois do bando', 0, 4, 0.1, ' s'),
+  select('model', 'Modelo de blocking', [['corpo', 'Só o bloco do corpo'], ['cubo', 'Cubo + asas'], ['blocos', 'Blocos articulados (forma de flamingo)']]),
+  check('splash', 'Respingos (blocos brancos no contato)'),
+  range('bodyW', 'Bloco: largura (lado a lado)', 0.1, 3, 0.01, ' m'),
+  range('bodyH', 'Bloco: altura', 0.1, 3, 0.01, ' m'),
+  range('bodyL', 'Bloco: comprimento (frente–trás)', 0.1, 4, 0.01, ' m'),
+  range('birdScale', 'Escala dos flamingos', 0.5, 3, 0.05, '×'),
+  range('flockSpread', 'Tamanho do bando na água', 0.4, 2.5, 0.05, '×'),
+  range('landDist', 'Distância do pouso à câmera', 4, 90, 0.5, ' m'),
+  range('flightH', 'Altura do voo na entrada', 4, 40, 0.5, ' m'),
+  range('approach', 'De onde vêm (profundidade)', 0.3, 2.5, 0.05, '×'),
+  range('flapAmp', 'Batida de asa (0 = planando)', 0, 1, 0.01),
+  range('flapHz', 'Frequência da batida', 1, 5, 0.1, ' Hz'),
+  range('ripples', 'Anéis e respingos na água', 0, 2, 0.05, '×')
+], true);
+panel('Câmera', [
+  el('div', 'hint', 'Começa em roll 180° olhando o reflexo (parece o mundo “certo”). No giro desfaz o roll e sobe o tilt até o horizonte real.'),
+  range('lensOpen', 'Lente no começo (zoom-out leve até o pouso)', 14, 120, 1, ' mm'),
+  range('lens', 'Lente no pouso', 14, 120, 1, ' mm'),
+  range('lensEnd', 'Lente depois do giro (zoom-out)', 12, 120, 1, ' mm'),
+  range('dollyBack', 'Câmera recua durante o giro', 0, 40, 0.5, ' m'),
+  (() => { const d = el('div', 'btnrow'); for (const mm of [18, 24, 35, 50, 85]) { const b = el('button', 'btn', mm + ' mm'); b.type = 'button'; b.onclick = () => { P.lens = mm; syncAll(); changed('lens'); }; d.append(b); } return d; })(),
+  range('pitch0', 'Tilt inicial (horizonte: 0 = no meio, −16 = some embaixo)', -40, 5, 0.5, '°'),
+  range('pitch1', 'Tilt final (horizonte)', -10, 20, 0.5, '°'),
+  range('camH0', 'Altura da câmera no início', 0.5, 20, 0.1, ' m'),
+  range('camH1', 'Altura da câmera no fim', 0.5, 20, 0.1, ' m'),
+  select('spinMode', 'Como gira', [['junto', 'Roll e tilt juntos'], ['roll-primeiro', 'Roll primeiro, depois tilt'], ['tilt-primeiro', 'Tilt primeiro, depois roll']]),
+  select('spinDir', 'Sentido do giro', [[1, 'Anti-horário'], [-1, 'Horário']]),
+  range('breathe', 'Câmera viva (respiração)', 0, 2, 0.05, '×'),
+  (() => { const q = el('div', 'qa'); q.id = 'qa'; return q; })()
+], true);
+panel('Cenário', [
+  range('mtDist', 'Distância da montanha', 300, 1600, 10, ' m'),
+  range('mtH', 'Altura da montanha', 60, 500, 5, ' m'),
+  range('mtWidth', 'Largura da base', 1, 3, 0.05, '×'),
+  check('hills', 'Morros laterais'), check('shore', 'Margem + linha de sal'), check('clouds', 'Nuvens (blocos)'),
+  range('fog', 'Névoa', 0, 1, 0.01),
+  range('waterTint', 'Força do reflexo (depois do giro)', 0.3, 1, 0.01),
+  check('mirrorOpen', 'Espelho perfeito na abertura (esconde o truque)'),
+  select('waterRef', 'Referência do plano da água', [['nenhuma', 'Nenhuma (o lago vem do próprio reflexo)'], ['grade', 'Só grade'], ['ondas', 'Só ondinhas'], ['ambos', 'Grade + ondinhas']]),
+  range('gridOp', 'Opacidade da grade', 0, 1, 0.01),
+  range('gridCell', 'Tamanho da célula da grade', 0.5, 10, 0.5, ' m')
+]);
+panel('Água: distorção do reflexo', [
+  el('div', 'hint', 'Até o primeiro pouso a água é um espelho perfeito (o truque continua). A distorção começa no pouso.'),
+  range('distAmt', 'Intensidade geral da distorção', 0, 4, 0.05, '×'),
+  range('ripDist', 'Impacto do pouso (onda que passa)', 0, 3, 0.05, '×'),
+  range('birdWobble', 'Reflexo dos flamingos tremendo', 0, 3, 0.05, '×'),
+  range('waterMove', 'Água mexendo no giro e no final', 0, 3, 0.05, '×'),
+  range('waveSize', 'Tamanho das ondas', 0.3, 3, 0.05, '×'),
+  range('waveSpeed', 'Velocidade das ondas', 0, 3, 0.05, '×'),
+  range('waveStretch', 'Formato: só horizontal ↔ redondo', 0, 1, 0.01)
+], true);
+panel('Estética', [
+  select('look', 'Visual', [['cinza', 'Playblast em tons de cinza (flamingo rosa)'], ['cor', 'Cores da referência']]),
+  range('greyContrast', 'Contraste entre os cinzas', 0.4, 1.6, 0.01, '×'),
+  range('greyBright', 'Brilho geral dos cinzas', -0.3, 0.3, 0.01)
+], true);
+panel('Cores (modo “Cores da referência”; o rosa vale nos dois)', [
+  color('cPink', 'Flamingo'), color('cTip', 'Ponta das asas'), color('cMount', 'Montanha'), color('cSnow', 'Neve'), color('cHills', 'Morros'),
+  color('cShore', 'Margem'), color('cSkyTop', 'Céu alto'), color('cSkyMid', 'Céu pêssego'), color('cSkyHor', 'Horizonte'), color('cWater', 'Água')
+]);
+panel('Visualização', [
+  check('hud', 'HUD (textos) na tela e no vídeo'), check('safe', 'Safe frame + mira central'),
+  select('previewRes', 'Resolução da prévia', [[360, '640×360'], [540, '960×540'], [720, '1280×720']]),
+  range('playRate', 'Velocidade da reprodução', 0.1, 2, 0.05, '×')
+]);
+
+// ======================================================== render na GPU (WebCodecs + mp4-muxer)
+async function cap(name) { try { return window.claude?.use ? await window.claude.use(name) : null; } catch (e) { return null; } }
+async function saveFile(name, blob) {
+  const dl = await cap('downloads');
+  if (dl) { try { await dl.save({ filename: name, data: blob }); return 'Arquivo salvo.'; } catch (e) { return e.code === 'declined' ? 'Download cancelado.' : `Não foi possível salvar (${e.code || e.message}).`; } }
+  if (!window.claude) { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); return 'Arquivo salvo.'; }
+  return 'Downloads indisponíveis nesta visualização. Abra o artifact no claude.ai.';
+}
+async function pickCodec(w, h, bitrate) {
+  for (const codec of ['avc1.640033', 'avc1.640032', 'avc1.640028', 'avc1.4d0033', 'avc1.42003e'])
+    for (const bm of ['constant', undefined]) {
+      const cfg = { codec, width: w, height: h, bitrate, framerate: FPS, hardwareAcceleration: 'prefer-hardware', avc: { format: 'avc' }, latencyMode: 'quality' };
+      if (bm) cfg.bitrateMode = bm;
+      try { const s = await VideoEncoder.isConfigSupported(cfg); if (s.supported) return s.config; } catch (e) {}
+    }
+  throw new Error('Este navegador não codifica H.264 nessa resolução. Use o Chrome ou o Edge atualizados.');
+}
+let cancelRender = false;
+function setupRender(hh) { rendering = true; curH = hh; curW = Math.round(hh * 16 / 9 / 2) * 2; ensureSize(); }
+function endRender() { rendering = false; ensureSize(); draw(); }
+const fmtS = (s) => s < 90 ? Math.round(s) + ' s' : (s / 60).toFixed(1).replace('.', ',') + ' min';
+async function renderMP4(onProgress) {
+  const { Muxer, ArrayBufferTarget } = await import('mp4-muxer');
+  setupRender(P.rRes);
+  const w = curW, h = curH;
+  try {
+    for (let i = 0; i < 3; i++) { renderFrame(0); await new Promise((r) => setTimeout(r, 0)); }
+    const config = await pickCodec(w, h, P.rBitrate * 1e6);
+    const target = new ArrayBufferTarget();
+    const mux = new Muxer({ target, video: { codec: 'avc', width: w, height: h, frameRate: FPS }, fastStart: 'in-memory', firstTimestampBehavior: 'offset' });
+    let err = null;
+    const enc = new VideoEncoder({ output: (c, m) => mux.addVideoChunk(c, m), error: (e) => { err = e; } });
+    enc.configure(config);
+    const t0 = performance.now();
+    for (let f = 0; f < NF; f++) {
+      if (cancelRender) break; if (err) throw err;
+      renderFrame(f / FPS);
+      const frame = new VideoFrame(view, { timestamp: Math.round(f * 1e6 / FPS), duration: Math.round(1e6 / FPS) });
+      enc.encode(frame, { keyFrame: f % FPS === 0 }); frame.close();
+      while (enc.encodeQueueSize > 3) await new Promise((r) => setTimeout(r, 1));
+      if (f % 2 === 0) await new Promise((r) => setTimeout(r, 0));
+      onProgress(f, (performance.now() - t0) / (f + 1));
+    }
+    await enc.flush(); enc.close(); if (err) throw err;
+    if (cancelRender) return { blob: null };
+    mux.finalize();
+    return { blob: new Blob([target.buffer], { type: 'video/mp4' }), name: `flamingos_blocking_${{ rosa: 'blocos-rosa', cinza: 'blocos-cinza', oculto: 'so-agua' }[P.birdLook]}_${w}x${h}_24qps_30s${P.hud ? '_hud' : '_limpo'}.mp4` };
+  } finally { endRender(); }
+}
+panel('Render final na sua GPU', [
+  select('birdLook', 'Versão do vídeo', [['rosa', 'Blocos rosa'], ['cinza', 'Blocos cinza'], ['oculto', 'Sem blocos (só a água distorcendo)']]),
+  select('rRes', 'Resolução', [[720, '1280×720'], [1080, '1920×1080'], [2160, '3840×2160 (4K)']]),
+  select('rBitrate', 'Qualidade (taxa de bits)', [[12, '12 Mb/s'], [24, '24 Mb/s'], [50, '50 Mb/s']]),
+  check('hud', 'HUD (textos) no vídeo — a mesma chave do botão na tela')
+], true, (d) => {
+  const btns = el('div', 'btnrow');
+  const go = el('button', 'btn rec', 'Renderizar MP4 (30 s)'), still = el('button', 'btn', 'Salvar quadro PNG'), stop = el('button', 'btn', 'Cancelar');
+  [go, still, stop].forEach((b) => b.type = 'button'); stop.hidden = true;
+  btns.append(go, still, stop); d.append(btns);
+  const bar = el('progress'); bar.max = 1; bar.value = 0; bar.hidden = true; d.append(bar);
+  const msg = el('div', 'hint', 'Mantenha esta aba visível durante o render. São 720 quadros a 24 qps; o blocking é leve, deve levar menos de um minuto na maioria das GPUs.'); d.append(msg);
+  stop.onclick = () => { cancelRender = true; };
+  still.onclick = async () => {
+    setPlaying(false); setupRender(P.rRes); renderFrame(frameOf(t) / FPS);
+    const blob = await new Promise((r) => view.toBlob(r, 'image/png')); endRender();
+    msg.textContent = await saveFile(`flamingos_blocking_q${String(frameOf(t) + 1).padStart(4, '0')}.png`, blob);
+  };
+  go.onclick = async () => {
+    if (!('VideoEncoder' in window)) { msg.textContent = 'Este navegador não tem WebCodecs. Use o Chrome ou o Edge atualizados.'; return; }
+    setPlaying(false); cancelRender = false; go.disabled = still.disabled = true; stop.hidden = false; bar.hidden = false; bar.value = 0;
+    try {
+      const { blob, name } = await renderMP4((f, ms) => { bar.value = (f + 1) / NF; msg.textContent = `Quadro ${f + 1} de ${NF} · faltam ${fmtS((NF - f - 1) * ms / 1000)}`; });
+      if (!blob) { msg.textContent = 'Render cancelado.'; return; }
+      msg.textContent = `Pronto: ${(blob.size / 1e6).toFixed(1).replace('.', ',')} MB. ` + await saveFile(name, blob);
+    } catch (e) { msg.textContent = 'Erro no render: ' + (e.message || e); }
+    finally { go.disabled = still.disabled = false; stop.hidden = true; bar.hidden = true; }
+  };
+});
+panel('Ajustes', [el('div', 'hint', 'Copie os ajustes e cole na conversa para eu gravar como padrão da próxima versão.')], false, (d) => {
+  const ta = el('textarea'); ta.setAttribute('aria-label', 'Ajustes em JSON');
+  const btns = el('div', 'btnrow');
+  const cp = el('button', 'btn', 'Copiar ajustes'), ps = el('button', 'btn', 'Colar ajustes'), rs = el('button', 'btn', 'Restaurar padrões');
+  [cp, ps, rs].forEach((b) => b.type = 'button');
+  cp.onclick = async () => { ta.value = JSON.stringify(P); try { await navigator.clipboard.writeText(ta.value); cp.textContent = 'Copiado'; } catch (e) { ta.select(); cp.textContent = 'Selecionado: Ctrl/⌘ + C'; } setTimeout(() => cp.textContent = 'Copiar ajustes', 1800); };
+  ps.onclick = () => { try { Object.assign(P, JSON.parse(ta.value)); save(); syncAll(); build(); draw(); } catch (e) { ta.value = 'JSON inválido: ' + e.message; } };
+  rs.onclick = () => { P = Object.assign({}, DEF); save(); syncAll(); build(); draw(); };
+  btns.append(cp, ps, rs); d.append(btns, ta);
+});
+
+// ======================================================== boot
+build(); syncAll(); draw();
+document.getElementById('boot').hidden = true;
+window.__app = { P, DEF, setPlaying, setT: (x) => { t = x; draw(); }, qa: () => { runQA(); return qaInfo; }, view: (m) => { viewMode = m; draw(); },
+  still: async (tt, hh = 540) => { setupRender(hh); renderFrame(tt); const d = view.toDataURL('image/png'); rendering = false; ensureSize(); return d; },
+  set: (o) => { Object.assign(P, o); syncAll(); build(); draw(); } };
+</script>
+</body>
+</html>
